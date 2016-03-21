@@ -309,10 +309,11 @@ var Resource = module.exports = Class.extend({
      * @param message
      */
     unauthorized:function (res, message) {
+        res.status(401);
         if (message)
-            res.send(message, 401);
+            res.send(message);
         else
-            res.send(401);
+            res.end();
     },
 
     /**
@@ -322,7 +323,7 @@ var Resource = module.exports = Class.extend({
      * @param json
      */
     bad_request:function (res, json) {
-        res.json(json.message || json, 400);
+        res.status(400).json(json.message || json);
     },
 
     /**
@@ -335,8 +336,11 @@ var Resource = module.exports = Class.extend({
     internal_error: function(err, req, res) {
     	var message = (err.message || err);
     	var code = (err.code || 500);
-        console.trace("jest internal error: " + message);
-        res.send(message, code);
+        if(!err.stack)
+            console.trace(message);
+        else
+            console.error(err.message,err.stack);
+        res.status(code).send(message);
     },
 
     /*****************************     Help functions   ******************************************
@@ -480,14 +484,14 @@ var Resource = module.exports = Class.extend({
         res.header('Cache-Control','no-cache');
         res.header('Pragma','no-cache');
         res.header('Expires','-1');
-        res.jsonp(object, status);
+        res.status(200).jsonp(object);
     },
 
     deserializeJson : function(req,res,object,status) {
         res.header('Cache-Control','no-cache');
         res.header('Pragma','no-cache');
         res.header('Expires','-1');
-        res.json(object, status);
+        res.status(200).json(object);
     },
 
 
@@ -586,10 +590,10 @@ var Resource = module.exports = Class.extend({
                                         self.unauthorized(res, err.message);
                                     }
                                     else if (err.message && err.message.match && err.message.match(/duplicate key/gi)) {
-                                        res.json(err.message, 400);
+                                        res.status(400).json(err.message);
                                     }
                                     else {
-                                        res.json(err.message, err.code);
+                                        res.status(err.code).json(err.message);
                                     }
                                 }
                                 else {
