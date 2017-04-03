@@ -454,10 +454,7 @@ var Resource = module.exports = Class.extend({
         var new_object = {};
         for (var field in tree) {
             // recursively dehydrate children
-            if (typeof(object.get) == 'function')
-                new_object[field] = this.dehydrate(object.get(field) || object[field], tree[field],object);
-            else
-                new_object[field] = this.dehydrate(object[field], tree[field],object);
+			new_object[field] = this.dehydrate(object[field], tree[field],object);
         }
         return new_object;
     },
