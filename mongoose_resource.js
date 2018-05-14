@@ -37,78 +37,70 @@ var MongooseResource = module.exports = Resource.extend({
         });
     },
 
+    resolveFieldObject: function(obj) {
+        const resolvedObj = {};
+        Object.keys(obj).forEach(key => {
+            const resolved = this.resolveFields(key, obj[key]);
+            if(resolved.op)
+                resolvedObj[resolved.key] = {['$' + resolved.op]: resolved.value};
+            else
+                resolvedObj[resolved.key] = resolved.value;
+        });
+        return resolvedObj;
+    },
+
+    resolveFields: function(queryKey, queryValue) {
+        if(queryKey === "and") {
+            return {
+                key: "$and",
+                value: queryValue.map(obj => this.resolveFieldObject(obj)),
+            };
+        } else if(queryKey === "or") {
+            return {
+                key: "$or",
+                value: queryValue.map(obj => this.resolveFieldObject(obj)),
+            };
+        } else {
+            const splt = queryKey.split('__');
+            let queryOp = null;
+            if (splt.length > 1) {
+                queryKey = splt[0];
+                queryOp = splt[1];
+            }
+            const path = this.model.schema.paths[queryKey];
+            if(path) {
+                if(path.options.type == Boolean)
+                    queryValue = typeof(queryValue) == 'string' ? queryValue.toLowerCase().trim() == 'true' : !!queryValue;
+                if(path.options.type == Number)
+                    queryValue = typeof(queryValue) == 'string' ? Number(queryValue.trim()) : Number(queryValue);
+            }
+            if(queryOp == 'maxDistance')
+                queryValue = Number(query_value);
+            return {
+                op: queryOp,
+                key: queryKey,
+                value: queryValue,
+            };
+        }
+    },
     get_objects:function (req, filters, sorts, limit, offset, callback) {
         var self = this;
 
         var query = this.default_query(this.model.find(this.default_filters));
         var count_query = this.model.count();
-       // var count_query = this.default_query(this.model.count(this.default_filters));
 
-        for (var filter in filters) {
-            if(filter == 'or')
-            {
-                var filter_value = _.map(filters[filter],function(or_filters)
-                {
-                    var or_filter_value = {};
-                    for (var filter in or_filters) {
-                        var splt = filter.split('__');
-                        var query_op = null;
-                        var query_key = filter;
-                        var query_value = or_filters[filter];
-                        if (splt.length > 1) {
-                            query_key = splt[0];
-                            query_op = splt[1];
-                        }
-                        if(self.model.schema.paths[query_key])
-                        {
-                            if(self.model.schema.paths[query_key].options.type == Boolean)
-                                query_value = query_value.toLowerCase().trim() == 'true';
-                            if(self.model.schema.paths[query_key].options.type == Number)
-                                query_value = Number(query_value.trim());
-                        }
-                        var current_or_filter_value = or_filter_value[query_key] || {};
-                        if(query_op)
-                            current_or_filter_value['$' + query_op] = query_value;
-                        else
-                            current_or_filter_value = query_value;
-                        or_filter_value[query_key] = current_or_filter_value;
-                    }
-                    return or_filter_value;
-                });
-                console.log(filter_value);
-                query.or(filter_value);
-            }
+        Object.keys(filters).forEach((filterKey) => {
+            const filterValue = filters[filterKey];
+            const resolved = this.resolveFields(filterKey, filterValue);
+            if(resolved.key === "$or")
+                query.or(resolved.value);
+            else if(resolved.key === "$and")
+                query.and(resolved.value);
+            else if(resolved.op)
+                query.where(resolved.key)[resolved.op](resolved.value);
             else
-            {
-                var splt = filter.split('__');
-                var query_op = null;
-                var query_key = filter;
-                var query_value = filters[filter];
-                if (splt.length > 1) {
-                    query_key = splt[0];
-                    query_op = splt[1];
-                }
-                if(self.model.schema.paths[query_key])
-                {
-                    if(self.model.schema.paths[query_key].options.type == Boolean)
-                        query_value = typeof(query_value) == 'string' ? query_value.toLowerCase().trim() == 'true' : !!query_value;
-                    if(self.model.schema.paths[query_key].options.type == Number)
-                        query_value = typeof(query_value) == 'string' ? Number(query_value.trim()) : Number(query_value);
-                }
-                if(query_op)
-                {
-                    if(query_op == 'maxDistance')
-                        query_value = Number(query_value);
-                    query.where(query_key)[query_op](query_value);
-                    //count_query.where(query_key)[query_op](query_value);
-                }
-                else
-                {
-                    query.where(query_key, query_value);
-                    //count_query.where(query_key, query_value);
-                }
-            }
-        }
+                query.where(resolved.key, resolved.value);
+        });
 
         var defaultSort = query.options.sort || {};
         query.options.sort = {};
