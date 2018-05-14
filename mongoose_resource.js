@@ -1,10 +1,11 @@
 var _ = require('underscore'),
     Class = require('sji'),
-    Resource = require('./resource');
-    Validation = require('./mongoose_validation');
+    Resource = require('./resource'),
+    Validation = require('./mongoose_validation'),
+    mongoose = require("mongoose");
 
 var MongooseResource = module.exports = Resource.extend({
-    init:function (model) {
+    init: function (model) {
         this._super();
         this.model = model;
         this.default_filters = {};
@@ -13,49 +14,64 @@ var MongooseResource = module.exports = Resource.extend({
         };
         this.validation = new Validation(model);
     },
-    run_query: function(req,queryset, callback)
-    {
+    run_query: function (req, queryset, callback) {
         queryset.exec(callback);
     },
 
-    show_fields : function(){
-        return this.fields || _.map(this.model.schema.tree,function(value,key)
-        {
-            return key;
-        });
+    show_fields: function () {
+        return this.fields || _.map(this.model.schema.tree, function (value, key) {
+                return key;
+            });
     },
 
-    get_object:function (req, id, callback) {
+    get_object: function (req, id, callback) {
         var self = this;
         var query = this.default_query(this.model.findOne(this.default_filters));
-        query = query.where('_id',id);
+        query = query.where('_id', id);
         this.authorization.limit_object(req, query, function (err, query) {
             if (err) callback(err);
             else {
-                self.run_query(req,query,callback);
+                self.run_query(req, query, callback);
             }
         });
     },
 
-    resolveFieldObject: function(obj) {
+    resolveFieldObject: function (obj) {
         const resolvedObj = {};
         Object.keys(obj).forEach(key => {
-            const resolved = this.resolveFields(key, obj[key]);
-            if(resolved.op)
+            const resolved = this.resolveField(key, obj[key]);
+            if (resolved.op)
                 resolvedObj[resolved.key] = {['$' + resolved.op]: resolved.value};
             else
                 resolvedObj[resolved.key] = resolved.value;
         });
         return resolvedObj;
     },
+    resolveValue: function (queryValue, queryOp, path) {
+        if (Array.isArray(queryValue))
+            return queryValue.map(val => this.resolveValue(val, queryOp, path));
 
-    resolveFields: function(queryKey, queryValue) {
-        if(queryKey === "and") {
+        if (path) {
+            if (path.options.type == Boolean)
+                queryValue = typeof(queryValue) == 'string' ? queryValue.toLowerCase().trim() == 'true' : !!queryValue;
+            else if (path.options.type == Number)
+                queryValue = typeof(queryValue) == 'string' ? Number(queryValue.trim()) : Number(queryValue);
+            else if (path.options.type && path.options.type.name === "ObjectId") {
+                // console.log(path.schema);
+                queryValue = mongoose.mongo.ObjectID(queryValue);
+            }
+        }
+        if (queryOp == 'maxDistance')
+            queryValue = Number(queryValue);
+        return queryValue;
+    },
+    resolveField: function (queryKey, queryValue) {
+        if (queryKey === "and") {
             return {
                 key: "$and",
                 value: queryValue.map(obj => this.resolveFieldObject(obj)),
             };
-        } else if(queryKey === "or") {
+        } else if (queryKey === "or") {
             return {
                 key: "$or",
                 value: queryValue.map(obj => this.resolveFieldObject(obj)),
@@ -68,14 +84,7 @@ var MongooseResource = module.exports = Resource.extend({
                 queryOp = splt[1];
             }
             const path = this.model.schema.paths[queryKey];
-            if(path) {
-                if(path.options.type == Boolean)
-                    queryValue = typeof(queryValue) == 'string' ? queryValue.toLowerCase().trim() == 'true' : !!queryValue;
-                if(path.options.type == Number)
-                    queryValue = typeof(queryValue) == 'string' ? Number(queryValue.trim()) : Number(queryValue);
-            }
-            if(queryOp == 'maxDistance')
-                queryValue = Number(query_value);
+            queryValue = this.resolveValue(queryValue, queryOp, path);
             return {
                 op: queryOp,
                 key: queryKey,
@@ -83,7 +92,7 @@ var MongooseResource = module.exports = Resource.extend({
             };
         }
     },
-    get_objects:function (req, filters, sorts, limit, offset, callback) {
+    get_objects: function (req, filters, sorts, limit, offset, callback) {
         var self = this;
 
         var query = this.default_query(this.model.find(this.default_filters));
@@ -91,12 +100,12 @@ var MongooseResource = module.exports = Resource.extend({
 
         Object.keys(filters).forEach((filterKey) => {
             const filterValue = filters[filterKey];
-            const resolved = this.resolveFields(filterKey, filterValue);
-            if(resolved.key === "$or")
+            const resolved = this.resolveField(filterKey, filterValue);
+            if (resolved.key === "$or")
                 query.or(resolved.value);
-            else if(resolved.key === "$and")
+            else if (resolved.key === "$and")
                 query.and(resolved.value);
-            else if(resolved.op)
+            else if (resolved.op)
                 query.where(resolved.key)[resolved.op](resolved.value);
             else
                 query.where(resolved.key, resolved.value);
@@ -107,11 +116,11 @@ var MongooseResource = module.exports = Resource.extend({
 
         for (var i = 0; i < sorts.length; i++) {
             var obj = {};
-            obj[sorts[sorts.length-1-i].field] = sorts[sorts.length-1-i].type;
+            obj[sorts[sorts.length - 1 - i].field] = sorts[sorts.length - 1 - i].type;
             query.sort(obj);
         }
-        for(var key in defaultSort){
-            if(key in query.options.sort)
+        for (var key in defaultSort) {
+            if (key in query.options.sort)
                 continue;
             var obj = {};
             obj[key] = defaultSort[key];
@@ -121,9 +130,9 @@ var MongooseResource = module.exports = Resource.extend({
         //for(var i=0; i<default_sort.length; i++)
         //    query.options.sort.push(default_sort[i]);
 
-        if(limit > 0)
+        if (limit > 0)
             query.limit(limit);
-        if(offset > 0)
+        if (offset > 0)
             query.skip(offset);
 
         var results = null, count = null;
@@ -131,11 +140,11 @@ var MongooseResource = module.exports = Resource.extend({
         function on_finish() {
             if (results != null && count != null) {
                 var final = {
-                    objects:results,
-                    meta:{
-                        total_count:count,
-                        offset:offset,
-                        limit:limit
+                    objects: results,
+                    meta: {
+                        total_count: count,
+                        offset: offset,
+                        limit: limit
                     }
                 };
                 callback(null, final);
@@ -145,20 +154,20 @@ var MongooseResource = module.exports = Resource.extend({
         self.authorization.limit_object_list(req, query, function (err, query) {
             if (err) return callback(err);
 
-            for(var key in query._conditions){
+            for (var key in query._conditions) {
                 count_query._conditions[key] = query._conditions[key];
             }
-            self.run_query(req,query,function (err, objects,counter) {
+            self.run_query(req, query, function (err, objects, counter) {
                 if (err) callback(err);
                 else {
                     results = objects;
-                    if(!(limit > 0))
+                    if (!(limit > 0))
                         count = counter || objects.length;
                     on_finish();
                 }
             });
-            if(limit > 0) {
-                self.run_query(req,count_query,function (err, counter) {
+            if (limit > 0) {
+                self.run_query(req, count_query, function (err, counter) {
                     if (err) callback(err);
                     else {
                         count = counter;
@@ -174,7 +183,7 @@ var MongooseResource = module.exports = Resource.extend({
 //        });
     },
 
-    create_obj:function (req, fields, callback) {
+    create_obj: function (req, fields, callback) {
         var self = this;
 
         var object = new self.model();
@@ -193,7 +202,7 @@ var MongooseResource = module.exports = Resource.extend({
         });
     },
 
-    update_obj:function (req, object, callback) {
+    update_obj: function (req, object, callback) {
         var self = this;
 
         self.authorization.edit_object(req, object, function (err, object) {
@@ -206,7 +215,7 @@ var MongooseResource = module.exports = Resource.extend({
         });
     },
 
-    delete_obj:function (req, object, callback) {
+    delete_obj: function (req, object, callback) {
         object.remove(function (err) {
             if (err) callback(err);
             else
@@ -214,7 +223,7 @@ var MongooseResource = module.exports = Resource.extend({
         });
     },
 
-    elaborate_mongoose_errors:function (err) {
+    elaborate_mongoose_errors: function (err) {
         if (err && err.errors) {
             for (var error in err.errors) {
                 err.errors[error] = this.validation.elaborate_mongoose_error(error, err.errors[error]);
@@ -228,13 +237,13 @@ var MongooseResource = module.exports = Resource.extend({
      * @param object
      * @param fields
      */
-    setValues:function(object,fields) {
+    setValues: function (object, fields) {
         var paths = {};
         var current_path = [];
-        var iterateFields = function(fields) {
-            _.each(fields,function(value,key) {
+        var iterateFields = function (fields) {
+            _.each(fields, function (value, key) {
                 current_path.push(key);
-                if(value && typeof(value) == 'object' && !Array.isArray(value))
+                if (value && typeof(value) == 'object' && !Array.isArray(value))
                     iterateFields(value);
                 else
                     paths[current_path.join('.')] = value;
@@ -243,7 +252,7 @@ var MongooseResource = module.exports = Resource.extend({
 
         };
         iterateFields(fields);
-        this._super(object,paths);
+        this._super(object, paths);
         return object;
     }
 });
