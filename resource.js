@@ -478,14 +478,14 @@ var Resource = module.exports = Class.extend({
     },
 
     deserializeJsonp: function(req,res,object,status) {
-        res.header('Cache-Control','no-cache');
+        res.header('Cache-Control','no-cache, no-store');
         res.header('Pragma','no-cache');
         res.header('Expires','-1');
         res.status(200).jsonp(object);
     },
 
     deserializeJson : function(req,res,object,status) {
-        res.header('Cache-Control','no-cache');
+        res.header('Cache-Control','no-cache, no-store');
         res.header('Pragma','no-cache');
         res.header('Expires','-1');
         res.status(200).json(object);
