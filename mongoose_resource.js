@@ -56,7 +56,7 @@ var MongooseResource = module.exports = Resource.extend({
                 queryValue = typeof(queryValue) == 'string' ? queryValue.toLowerCase().trim() == 'true' : !!queryValue;
             else if (path.options.type == Number)
                 queryValue = typeof(queryValue) == 'string' ? Number(queryValue.trim()) : Number(queryValue);
-            else if (path.options.type && path.options.type.name === "ObjectId") {
+            else if (path.options.type && path.options.type.name === "ObjectId" && typeof(queryValue) === "string") {
                 // console.log(path.schema);
                 queryValue = mongoose.mongo.ObjectID(queryValue);
             }
