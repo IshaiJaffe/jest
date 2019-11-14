@@ -66,12 +66,12 @@ var MongooseResource = module.exports = Resource.extend({
         return queryValue;
     },
     resolveField: function (queryKey, queryValue) {
-        if (queryKey === "and") {
+        if (queryKey === "and" || queryKey === "$and") {
             return {
                 key: "$and",
                 value: queryValue.map(obj => this.resolveFieldObject(obj)),
             };
-        } else if (queryKey === "or") {
+        } else if (queryKey === "or" || queryKey === "$or") {
             return {
                 key: "$or",
                 value: queryValue.map(obj => this.resolveFieldObject(obj)),
